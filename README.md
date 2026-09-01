@@ -78,6 +78,34 @@ PYTHONPATH=backend .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8001
 
 DeepSeek API 适配使用 OpenAI 兼容的 `/chat/completions`，输出采用 JSON 约束。真实模型测试与规则测试分开记录。
 
+## 测试环境上线准备
+
+当前项目是前后端两个独立应用：后端运行 FastAPI，前端运行 Next.js standalone。两者需要分别部署；前端生产构建时设置 `NEXT_PUBLIC_API_BASE_URL=/api/v1` 和 `BACKEND_URL=https://你的后端域名`，由 Next.js 同源代理转发 `/api/*`，避免前端继续访问 localhost。
+
+前端生产构建：
+
+```bash
+cd frontend
+npm ci
+NEXT_PUBLIC_API_BASE_URL=/api/v1 BACKEND_URL=https://你的后端域名 npm run build
+cp -R .next/static .next/standalone/.next/static
+cp -R public .next/standalone/public
+cd .next/standalone
+PORT=3000 node server.js
+```
+
+后端生产启动：
+
+```bash
+APP_ENV=production BACKEND_HOST=0.0.0.0 BACKEND_PORT=8000 \
+CORS_ORIGINS=https://你的前端域名 \
+PYTHONPATH=backend .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers
+```
+
+生产环境必须在部署平台密钥管理中设置 `DEEPSEEK_API_KEY`，不能提交 `.env`。当前 JSON/SQLite 数据层适合演示和小规模测试，不适合作为正式多用户生产数据库。
+
+详细上线清单见 [`Docs/上线适配说明.md`](./Docs/上线适配说明.md) 和 [`Docs/部署上线技术文档.md`](./Docs/部署上线技术文档.md)。
+
 ## 第二阶段人工验收路径
 
 1. 打开“家人协助”页，确认看到“女儿（演示）”、王阿姨和查看订单、帮忙下单、代为付款、协助售后四项权限。

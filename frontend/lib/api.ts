@@ -1,4 +1,5 @@
-export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8001/api/v1";
+const configuredApiBase = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "");
+export const API_BASE = configuredApiBase || (process.env.NODE_ENV === "production" ? "/api/v1" : "http://127.0.0.1:8001/api/v1");
 
 export type Product = {
   id: string; name: string; image_url: string; price: number; unit_label: string;

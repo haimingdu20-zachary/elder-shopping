@@ -45,7 +45,9 @@ def create_app(data_dir: str | Path | None = None) -> FastAPI:
     app.state.family_service = family_service
     app.state.assistant_service = assistant_service
     app.state.knowledge_service = knowledge_service
-    app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+    configured_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+    cors_origins = [origin.strip() for origin in configured_origins.split(",") if origin.strip()]
+    app.add_middleware(CORSMiddleware, allow_origins=cors_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
     @app.exception_handler(AppError)
     async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
