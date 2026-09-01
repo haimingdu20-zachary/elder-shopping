@@ -93,6 +93,7 @@ class BackupService:
     def _tos_client(self):
         try:
             import boto3
+            from botocore.config import Config
         except ImportError as exc:
             raise BackupError("TOS 备份需要安装 boto3 依赖。") from exc
         endpoint = os.getenv("TOS_ENDPOINT", "").strip()
@@ -101,7 +102,17 @@ class BackupService:
         secret_key = os.getenv("TOS_SECRET_KEY", "").strip()
         if not endpoint or not bucket or not access_key or not secret_key:
             raise BackupError("TOS 备份缺少 TOS_ENDPOINT、TOS_BUCKET、TOS_ACCESS_KEY 或 TOS_SECRET_KEY。")
-        return boto3.client("s3", endpoint_url=endpoint, region_name=os.getenv("TOS_REGION", "cn-beijing"), aws_access_key_id=access_key, aws_secret_access_key=secret_key), bucket
+        # 火山 TOS 的 S3 兼容接口要求使用虚拟主机式寻址；默认路径式寻址会返回
+        # InvalidPathAccess。桶名会被放入请求主机名中，例如 bucket.tos-s3-cn-beijing.volces.com。
+        client = boto3.client(
+            "s3",
+            endpoint_url=endpoint,
+            region_name=os.getenv("TOS_REGION", "cn-beijing"),
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            config=Config(s3={"addressing_style": "virtual"}),
+        )
+        return client, bucket
 
     def _download_latest_tos(self) -> tuple[Path, dict[str, Any], str]:
         client, bucket = self._tos_client()
