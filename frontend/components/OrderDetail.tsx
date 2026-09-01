@@ -1,0 +1,29 @@
+"use client";
+
+import Link from "next/link";
+import Image from "next/image";
+import { useCallback, useEffect, useState } from "react";
+import LargeButton from "@/components/LargeButton";
+import OrderStatus from "@/components/OrderStatus";
+import SupportEntry from "@/components/SupportEntry";
+import { api, type OrderDetail as Detail } from "@/lib/api";
+
+export default function OrderDetail({ id }: { id: string }) {
+  const [order, setOrder] = useState<Detail | null>(null);
+  const [message, setMessage] = useState("");
+  const [familyLink, setFamilyLink] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(async () => { try { setOrder(await api.order(id)); } catch (err) { setError(err instanceof Error ? err.message : "订单暂时无法打开。"); } }, [id]);
+  useEffect(() => { load(); }, [load]);
+
+  async function pay(result: "success" | "failed" | "cancelled") { setBusy(true); setError(""); try { const output = await api.pay(id, result); setMessage(output.message); setOrder(output.order); } catch (err) { setError(err instanceof Error ? err.message : "模拟支付暂时无法完成。"); } finally { setBusy(false); } }
+  async function confirmReceipt() { setBusy(true); setError(""); try { setOrder(await api.confirmReceipt(id)); setMessage("已经确认收货，祝您使用愉快！"); } catch (err) { setError(err instanceof Error ? err.message : "暂时无法确认收货。"); } finally { setBusy(false); } }
+  async function askFamilyToPay() { setBusy(true); setError(""); try { const request = await api.createFamilyPaymentRequest(id); setFamilyLink(`${window.location.origin}${request.share_url ?? `/family/requests/${request.id}`}`); setMessage("已生成家人代付链接，请把下面的链接发给家人。"); } catch (err) { setError(err instanceof Error ? err.message : "家人代付请求暂时无法创建。"); } finally { setBusy(false); } }
+  async function askFamilyForAfterSale() { setBusy(true); setError(""); try { const request = await api.createAfterSaleAssistance(id); setFamilyLink(`${window.location.origin}${request.share_url ?? `/family/requests/${request.id}`}`); setMessage("已生成家人协助售后请求，请把下面的链接发给家人。"); } catch (err) { setError(err instanceof Error ? err.message : "家人协助售后请求暂时无法创建。"); } finally { setBusy(false); } }
+  async function copyFamilyLink() { if (!familyLink) return; try { await navigator.clipboard.writeText(familyLink); setMessage("链接已复制，可以发给家人了。"); } catch { setMessage("请长按或手动复制下面的链接发给家人。"); } }
+
+  if (error && !order) return <p role="alert" className="rounded-2xl bg-red-50 p-5 font-bold text-red-800">{error}</p>;
+  if (!order) return <p className="rounded-2xl bg-white p-6 text-center font-bold">正在打开订单……</p>;
+  return <div className="space-y-5"><Link href="/orders" className="focus-ring inline-flex rounded-xl px-2 py-1 font-black text-emerald-800">← 返回订单</Link><div className="flex items-start justify-between gap-3"><div><p className="text-base text-slate-500">订单号：{order.id}</p><h1 className="mt-1 text-3xl font-black">订单详情</h1></div><OrderStatus status={order.status} label={order.status_label} /></div>{message && <p className="rounded-2xl bg-emerald-100 p-3 font-bold text-emerald-900">{message}</p>}{error && <p role="alert" className="rounded-2xl bg-red-50 p-3 font-bold text-red-800">{error}</p>}{familyLink && <section className="space-y-3 rounded-3xl bg-blue-50 p-5"><h2 className="text-xl font-black">发给家人的链接</h2><p className="break-all rounded-2xl bg-white p-3 text-base">{familyLink}</p><LargeButton onClick={copyFamilyLink} className="w-full bg-white text-blue-900">复制链接</LargeButton></section>}<section className="space-y-3 rounded-3xl bg-white p-5 shadow-soft"><h2 className="text-xl font-black">商品</h2>{order.items.map((item) => <div key={item.product_id} className="flex items-center gap-3 border-b border-slate-100 pb-3"><Image src={item.image_url} alt="" width={64} height={64} className="h-16 w-16 rounded-xl bg-emerald-50 object-cover" /><div className="flex-1"><p className="font-black">{item.name} × {item.quantity}</p><p className="text-base text-slate-600">¥{item.item_total}</p></div></div>)}<p className="flex justify-between"><span>商品金额</span><b>¥{order.items_amount}</b></p><p className="flex justify-between"><span>运费</span><b>¥{order.shipping_fee}</b></p><p className="flex justify-between border-t border-slate-100 pt-3 text-2xl font-black"><span>实付金额</span><strong className="text-emerald-700">¥{order.total_amount}</strong></p></section><section className="space-y-2 rounded-3xl bg-white p-5 shadow-soft"><h2 className="text-xl font-black">配送信息</h2><p>{order.address_snapshot.name} {order.address_snapshot.phone}</p><p>{order.address_snapshot.full_address}</p><p className="rounded-2xl bg-blue-50 p-3 font-bold text-blue-900">{order.logistics_text}</p></section>{order.can_pay && <section className="space-y-3 rounded-3xl bg-amber-50 p-5"><h2 className="text-xl font-black">模拟支付</h2><p>这里只是演示，不会产生真实扣款。</p><div className="grid gap-2 sm:grid-cols-3"><LargeButton disabled={busy} onClick={() => pay("success")} className="bg-emerald-700 text-white">模拟成功</LargeButton><LargeButton disabled={busy} onClick={() => pay("failed")} className="bg-white text-amber-900">模拟失败</LargeButton><LargeButton disabled={busy} onClick={() => pay("cancelled")} className="bg-white text-slate-800">取消付款</LargeButton></div><LargeButton disabled={busy} onClick={askFamilyToPay} className="w-full border-2 border-emerald-700 bg-white text-emerald-800">让家人帮我付款</LargeButton></section>}{order.can_confirm_receipt && <LargeButton disabled={busy} onClick={confirmReceipt} className="w-full bg-emerald-700 text-white">确认收货</LargeButton>}{order.can_apply_after_sale && <section className="space-y-3"><Link href={`/after-sales/${order.id}`} className="focus-ring block rounded-2xl border-2 border-emerald-700 bg-white px-5 py-3 text-center text-lg font-black text-emerald-800">自己申请退款/退货</Link><LargeButton disabled={busy} onClick={askFamilyForAfterSale} className="w-full bg-violet-700 text-white">请家人协助售后</LargeButton></section>}<SupportEntry /></div>;
+}

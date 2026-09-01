@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+.env
+.next/
+node_modules/
+frontend/.eslintcache
+data/*.sqlite3
+data/assistant_audit.json

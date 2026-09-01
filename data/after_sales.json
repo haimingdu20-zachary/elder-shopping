@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "after-sale-demo",
+      "order_id": "order-demo-after-sale",
+      "user_id": "demo-elder",
+      "type": "return_and_refund",
+      "reason": "商品不需要了",
+      "refund_amount": 44,
+      "refund_destination": "原支付方式（模拟）",
+      "return_method": "pickup",
+      "status": "submitted",
+      "status_label": "售后申请已提交",
+      "created_at": "2026-08-21T09:00:00+08:00",
+      "updated_at": "2026-08-23T14:00:00+08:00",
+      "idempotency_key": "seed-after-sale-request"
+    }
+  ]
+}

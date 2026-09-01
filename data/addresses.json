@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "address-001",
+      "user_id": "demo-elder",
+      "name": "王阿姨",
+      "phone": "138****2688",
+      "full_address": "上海市浦东新区世纪大道 100 号",
+      "is_default": true
+    },
+    {
+      "id": "address-002",
+      "user_id": "demo-elder",
+      "name": "王阿姨",
+      "phone": "138****2688",
+      "full_address": "上海市浦东新区丁香路 200 号",
+      "is_default": false
+    }
+  ]
+}

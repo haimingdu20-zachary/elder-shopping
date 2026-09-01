@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --color-parchment: #f7f7f4;
+  --color-bone: #f2f1ed;
+  --color-linen: #e6e5e0;
+  --color-stone: #cdcdc9;
+  --color-ink: #26251e;
+  --color-muted: #66655f;
+  --color-forest: #34785c;
+  --color-verdant: #1f8a65;
+  --color-ember: #f54e00;
+  --color-amber: #c08532;
+  --radius-control: 4px;
+  --radius-modal: 8px;
+  --control-min-height: 52px;
+  background: var(--color-parchment);
+  color: var(--color-ink);
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--color-parchment); color: var(--color-ink); font-size: 18px; line-height: 1.5; }
+button, input, select { font: inherit; }
+button { cursor: pointer; }
+a { color: inherit; }
+
+.focus-ring:focus-visible { outline: 4px solid var(--color-amber); outline-offset: 3px; }
+
+::selection { background: #8bc4f8; color: var(--color-ink); }
