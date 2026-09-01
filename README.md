@@ -9,7 +9,7 @@
 - 已实现：首页语音/文字助手、浏览器语音转文字、固定演示意图解析和受控页面跳转。
 - 已实现：DeepSeek 可选接入、本地退货/配送/家人协助 FAQ 检索、知识来源显示、商品/订单/FAQ 三个受控只读 Tool Calls、最近 8 条多轮上下文和助手审计。
 - 已实现：商品、购物车、订单和售后使用本地 JSON 持久化；家人关系和协助请求使用 SQLite 持久化。
-- 暂不实现：真实支付、物流、商城、客服、真实登录/通知、高风险 Tool Calls、多轮循环/长期记忆、向量数据库、云端 ASR/TTS 和微信小程序。
+- 暂不实现：真实支付、物流、商城、客服、短信/OIDC 登录、通知、高风险 Tool Calls、多轮循环/长期记忆、向量数据库、云端 ASR/TTS 和微信小程序。
 
 ## 环境
 
@@ -163,6 +163,18 @@ PYTHONPATH=backend .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --p
 7. 在订单页打开“已送达”的演示订单，进入申请售后。
 8. 选择售后原因和退货方式，查看退款确认，再确认提交。
 9. 打开手机宽度检查：主要文字不小于 18px，主要按钮至少 48px 高，页面不应横向滚动。
+
+## 登录与数据备份
+
+生产环境必须设置 `AUTH_SECRET` 和 `INVITE_CODES`。邀请码格式支持 `elder:老人邀请码,family:家人邀请码`，也支持 `用户ID:角色:显示名:邀请码`。开发环境默认提供 `elder-demo` 和 `family-demo` 两个测试邀请码。
+
+配置 TOS 后执行备份：
+
+```bash
+BACKUP_PROVIDER=tos DATA_DIR=/tmp/data PYTHONPATH=backend python backend/scripts/backup_data.py
+```
+
+本地恢复前设置 `RESTORE_CONFIRM=YES`；完整配置见 [`Docs/上线适配说明.md`](./Docs/上线适配说明.md)。
 
 ## 数据说明
 

@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import FastAPI, Query, Request
+from fastapi import Depends, FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
@@ -14,8 +14,9 @@ from dotenv import load_dotenv
 from .family_db import FamilyDatabase
 from .family_service import FamilyService
 from .assistant_service import AssistantService
+from .auth import AuthService, Identity
 from .knowledge_service import KnowledgeService
-from .schemas import AfterSaleDraftRequest, AssistantChatRequest, CartItemRequest, CreateOrderRequest, FamilyAfterSaleRequest, FamilyOrderRequest, FamilyPaymentRequest, PaymentRequest, SubmitAfterSaleRequest
+from .schemas import AfterSaleDraftRequest, AssistantChatRequest, CartItemRequest, CreateOrderRequest, FamilyAfterSaleRequest, FamilyOrderRequest, FamilyPaymentRequest, LoginRequest, PaymentRequest, SubmitAfterSaleRequest
 from .service import AppError, CommerceService
 from .storage import JsonStore, StorageError
 
@@ -26,6 +27,16 @@ load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 def response(data: object, request_id: str | None = None) -> dict[str, object]:
     return {"data": data, "request_id": request_id or f"req_{uuid4().hex[:12]}"}
+
+
+def current_identity(request: Request) -> Identity:
+    return request.app.state.auth.authenticate(request)
+
+
+def require_role(request: Request, identity: Identity, role: str) -> Identity:
+    if request.app.state.auth.production and identity.role != role:
+        raise AppError("ROLE_NOT_ALLOWED", "当前账号不能使用这个功能。", 403)
+    return identity
 
 
 def create_app(data_dir: str | Path | None = None) -> FastAPI:
@@ -42,11 +53,13 @@ def create_app(data_dir: str | Path | None = None) -> FastAPI:
     family_service = FamilyService(FamilyDatabase(family_db_path), service)
     knowledge_service = KnowledgeService(JsonStore(resolved_data_dir))
     assistant_service = AssistantService(service, knowledge_service)
+    auth_service = AuthService(environment)
     app = FastAPI(title="老人购物模拟商城 API", version="0.1.0")
     app.state.service = service
     app.state.family_service = family_service
     app.state.assistant_service = assistant_service
     app.state.knowledge_service = knowledge_service
+    app.state.auth = auth_service
     configured_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
     cors_origins = [origin.strip() for origin in configured_origins.split(",") if origin.strip()]
     app.add_middleware(CORSMiddleware, allow_origins=cors_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
@@ -85,6 +98,14 @@ def create_app(data_dir: str | Path | None = None) -> FastAPI:
     async def health() -> dict[str, object]:
         return response({"status": "ok", "stage": "phase-6"})
 
+    @app.post("/api/v1/auth/login")
+    async def login(payload: LoginRequest) -> dict[str, object]:
+        return response(auth_service.login(payload.invite_code))
+
+    @app.get("/api/v1/auth/me")
+    async def me(identity: Identity = Depends(current_identity)) -> dict[str, object]:
+        return response(identity.as_dict())
+
     @app.get("/api/v1/categories")
     async def categories() -> dict[str, object]:
         return response(service.categories())
@@ -98,96 +119,116 @@ def create_app(data_dir: str | Path | None = None) -> FastAPI:
         return response(service.product(product_id))
 
     @app.get("/api/v1/addresses")
-    async def addresses() -> dict[str, object]:
-        return response(service.addresses())
+    async def addresses(identity: Identity = Depends(current_identity)) -> dict[str, object]:
+        address_owner = "demo-elder" if identity.role == "family" else identity.user_id
+        return response(service.for_user(address_owner).addresses())
 
     @app.get("/api/v1/cart")
-    async def cart() -> dict[str, object]:
-        return response(service.cart())
+    async def cart(identity: Identity = Depends(current_identity)) -> dict[str, object]:
+        return response(service.for_user(identity.user_id).cart())
 
     @app.put("/api/v1/cart/items")
-    async def update_cart(payload: CartItemRequest) -> dict[str, object]:
-        return response(service.update_cart(payload.product_id, payload.quantity))
+    async def update_cart(payload: CartItemRequest, identity: Identity = Depends(current_identity)) -> dict[str, object]:
+        return response(service.for_user(identity.user_id).update_cart(payload.product_id, payload.quantity))
 
     @app.get("/api/v1/orders")
-    async def orders() -> dict[str, object]:
-        return response(service.orders())
+    async def orders(identity: Identity = Depends(current_identity)) -> dict[str, object]:
+        return response(service.for_user(identity.user_id).orders())
 
     @app.get("/api/v1/orders/{order_id}")
-    async def order(order_id: str) -> dict[str, object]:
-        return response(service.order_detail(order_id))
+    async def order(order_id: str, identity: Identity = Depends(current_identity)) -> dict[str, object]:
+        return response(service.for_user(identity.user_id).order_detail(order_id))
 
     @app.post("/api/v1/orders/drafts")
-    async def create_order(payload: CreateOrderRequest) -> dict[str, object]:
-        return response(service.create_order_draft([item.model_dump() for item in payload.items], payload.address_id, payload.idempotency_key))
+    async def create_order(payload: CreateOrderRequest, identity: Identity = Depends(current_identity)) -> dict[str, object]:
+        return response(service.for_user(identity.user_id).create_order_draft([item.model_dump() for item in payload.items], payload.address_id, payload.idempotency_key))
 
     @app.post("/api/v1/orders/{order_id}/simulate-payment")
-    async def simulate_payment(order_id: str, payload: PaymentRequest) -> dict[str, object]:
-        return response(service.simulate_payment(order_id, payload.result, payload.idempotency_key))
+    async def simulate_payment(order_id: str, payload: PaymentRequest, identity: Identity = Depends(current_identity)) -> dict[str, object]:
+        return response(service.for_user(identity.user_id).simulate_payment(order_id, payload.result, payload.idempotency_key))
 
     @app.post("/api/v1/orders/{order_id}/confirm-receipt")
-    async def confirm_receipt(order_id: str) -> dict[str, object]:
-        return response(service.confirm_receipt(order_id))
+    async def confirm_receipt(order_id: str, identity: Identity = Depends(current_identity)) -> dict[str, object]:
+        return response(service.for_user(identity.user_id).confirm_receipt(order_id))
 
     @app.post("/api/v1/after-sales/drafts")
-    async def create_after_sale(payload: AfterSaleDraftRequest) -> dict[str, object]:
-        return response(service.create_after_sale_draft(payload.order_id, payload.type, payload.reason, payload.return_method, payload.idempotency_key))
+    async def create_after_sale(payload: AfterSaleDraftRequest, identity: Identity = Depends(current_identity)) -> dict[str, object]:
+        return response(service.for_user(identity.user_id).create_after_sale_draft(payload.order_id, payload.type, payload.reason, payload.return_method, payload.idempotency_key))
 
     @app.post("/api/v1/after-sales/{after_sale_id}/submit")
-    async def submit_after_sale(after_sale_id: str, payload: SubmitAfterSaleRequest) -> dict[str, object]:
-        return response(service.submit_after_sale(after_sale_id, payload.confirm))
+    async def submit_after_sale(after_sale_id: str, payload: SubmitAfterSaleRequest, identity: Identity = Depends(current_identity)) -> dict[str, object]:
+        return response(service.for_user(identity.user_id).submit_after_sale(after_sale_id, payload.confirm))
 
     @app.get("/api/v1/after-sales/{after_sale_id}")
-    async def get_after_sale(after_sale_id: str) -> dict[str, object]:
-        return response(service.after_sale(after_sale_id))
+    async def get_after_sale(after_sale_id: str, identity: Identity = Depends(current_identity)) -> dict[str, object]:
+        return response(service.for_user(identity.user_id).after_sale(after_sale_id))
 
     @app.get("/api/v1/family/members")
-    async def family_members(elder_user_id: str = Query(default="demo-elder")) -> dict[str, object]:
+    async def family_members(identity: Identity = Depends(current_identity)) -> dict[str, object]:
+        elder_user_id = identity.user_id if identity.role == "elder" else "demo-elder"
         return response(family_service.members(elder_user_id))
 
     @app.post("/api/v1/assistant/chat")
-    async def assistant_chat(payload: AssistantChatRequest) -> dict[str, object]:
-        return response(await assistant_service.chat(payload.text, payload.user_id, payload.history, payload.conversation_id))
+    async def assistant_chat(payload: AssistantChatRequest, identity: Identity = Depends(current_identity)) -> dict[str, object]:
+        scoped_assistant = AssistantService(service.for_user(identity.user_id), knowledge_service)
+        return response(await scoped_assistant.chat(payload.text, identity.user_id, payload.history, payload.conversation_id))
 
     @app.get("/api/v1/knowledge/search")
     async def knowledge_search(q: str = Query(..., min_length=1, max_length=200)) -> dict[str, object]:
         return response(knowledge_service.search(q))
 
     @app.get("/api/v1/family/orders")
-    async def family_orders(family_user_id: str = Query(...)) -> dict[str, object]:
-        return response(family_service.orders(family_user_id))
+    async def family_orders(request: Request, family_user_id: str | None = Query(default=None), identity: Identity = Depends(current_identity)) -> dict[str, object]:
+        require_role(request, identity, "family")
+        resolved_family_user_id = identity.user_id if auth_service.production else (family_user_id or "demo-daughter")
+        return response(family_service.orders(resolved_family_user_id))
 
     @app.get("/api/v1/family/orders/{order_id}")
-    async def family_order(order_id: str, family_user_id: str = Query(...)) -> dict[str, object]:
-        return response(family_service.order_detail(order_id, family_user_id))
+    async def family_order(order_id: str, request: Request, family_user_id: str | None = Query(default=None), identity: Identity = Depends(current_identity)) -> dict[str, object]:
+        require_role(request, identity, "family")
+        resolved_family_user_id = identity.user_id if auth_service.production else (family_user_id or "demo-daughter")
+        return response(family_service.order_detail(order_id, resolved_family_user_id))
 
     @app.post("/api/v1/family/orders")
-    async def create_family_order(payload: FamilyOrderRequest) -> dict[str, object]:
-        return response(family_service.create_order(payload.family_user_id, [item.model_dump() for item in payload.items], payload.address_id, payload.idempotency_key))
+    async def create_family_order(payload: FamilyOrderRequest, request: Request, identity: Identity = Depends(current_identity)) -> dict[str, object]:
+        require_role(request, identity, "family")
+        family_user_id = identity.user_id if auth_service.production else "demo-daughter"
+        return response(family_service.create_order(family_user_id, [item.model_dump() for item in payload.items], payload.address_id, payload.idempotency_key))
 
     @app.post("/api/v1/family/payment-requests")
-    async def create_family_payment_request(payload: FamilyPaymentRequest) -> dict[str, object]:
-        return response(family_service.create_payment_request(payload.elder_user_id, payload.order_id, payload.family_user_id, payload.note))
+    async def create_family_payment_request(payload: FamilyPaymentRequest, request: Request, identity: Identity = Depends(current_identity)) -> dict[str, object]:
+        require_role(request, identity, "elder")
+        return response(family_service.create_payment_request(identity.user_id, payload.order_id, payload.family_user_id, payload.note))
 
     @app.get("/api/v1/family/requests")
-    async def family_requests(family_user_id: str = Query(...)) -> dict[str, object]:
-        return response(family_service.requests(family_user_id))
+    async def family_requests(request: Request, family_user_id: str | None = Query(default=None), identity: Identity = Depends(current_identity)) -> dict[str, object]:
+        require_role(request, identity, "family")
+        resolved_family_user_id = identity.user_id if auth_service.production else (family_user_id or "demo-daughter")
+        return response(family_service.requests(resolved_family_user_id))
 
     @app.get("/api/v1/family/requests/{request_id}")
-    async def family_request(request_id: str, family_user_id: str = Query(...)) -> dict[str, object]:
-        return response(family_service.request_detail(request_id, family_user_id))
+    async def family_request(request_id: str, request: Request, family_user_id: str | None = Query(default=None), identity: Identity = Depends(current_identity)) -> dict[str, object]:
+        require_role(request, identity, "family")
+        resolved_family_user_id = identity.user_id if auth_service.production else (family_user_id or "demo-daughter")
+        return response(family_service.request_detail(request_id, resolved_family_user_id))
 
     @app.post("/api/v1/family/requests/{request_id}/confirm-payment")
-    async def confirm_family_payment(request_id: str, family_user_id: str = Query(...)) -> dict[str, object]:
-        return response(family_service.confirm_payment(request_id, family_user_id))
+    async def confirm_family_payment(request_id: str, request: Request, family_user_id: str | None = Query(default=None), identity: Identity = Depends(current_identity)) -> dict[str, object]:
+        require_role(request, identity, "family")
+        resolved_family_user_id = identity.user_id if auth_service.production else (family_user_id or "demo-daughter")
+        return response(family_service.confirm_payment(request_id, resolved_family_user_id))
 
     @app.post("/api/v1/family/requests/{request_id}/cancel")
-    async def cancel_family_request(request_id: str, family_user_id: str = Query(...)) -> dict[str, object]:
-        return response(family_service.cancel_request(request_id, family_user_id))
+    async def cancel_family_request(request_id: str, request: Request, family_user_id: str | None = Query(default=None), identity: Identity = Depends(current_identity)) -> dict[str, object]:
+        require_role(request, identity, "family")
+        resolved_family_user_id = identity.user_id if auth_service.production else (family_user_id or "demo-daughter")
+        return response(family_service.cancel_request(request_id, resolved_family_user_id))
 
     @app.post("/api/v1/family/after-sale-requests")
-    async def create_family_after_sale_request(payload: FamilyAfterSaleRequest) -> dict[str, object]:
-        return response(family_service.create_after_sale_request(payload.family_user_id, payload.elder_user_id, payload.order_id, payload.note))
+    async def create_family_after_sale_request(payload: FamilyAfterSaleRequest, request: Request, identity: Identity = Depends(current_identity)) -> dict[str, object]:
+        require_role(request, identity, "family")
+        family_user_id = identity.user_id if auth_service.production else "demo-daughter"
+        return response(family_service.create_after_sale_request(family_user_id, "demo-elder", payload.order_id, payload.note))
 
     return app
 

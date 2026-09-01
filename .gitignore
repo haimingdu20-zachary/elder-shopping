@@ -9,3 +9,4 @@ node_modules/
 frontend/.eslintcache
 data/*.sqlite3
 data/assistant_audit.json
+data/backups/

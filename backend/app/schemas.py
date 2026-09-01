@@ -10,6 +10,10 @@ class CartItemRequest(BaseModel):
     quantity: int = Field(ge=0, le=99)
 
 
+class LoginRequest(BaseModel):
+    invite_code: str = Field(min_length=1, max_length=200)
+
+
 class OrderItemRequest(BaseModel):
     product_id: str = Field(min_length=1, max_length=80)
     quantity: int = Field(gt=0, le=99)

@@ -37,10 +37,14 @@ STATUS_LABELS = {
 
 
 class CommerceService:
-    def __init__(self, store: JsonStore, user_id: str = "demo-elder"):
+    def __init__(self, store: JsonStore, user_id: str = "demo-elder", ensure_seed: bool = True):
         self.store = store
         self.user_id = user_id
-        self._ensure_seed_data()
+        if ensure_seed:
+            self._ensure_seed_data()
+
+    def for_user(self, user_id: str) -> "CommerceService":
+        return CommerceService(self.store, user_id, ensure_seed=False)
 
     def _ensure_seed_data(self) -> None:
         self.store.read_items("products.json", seed_products())

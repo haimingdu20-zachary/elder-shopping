@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
+import AuthGate from "@/components/AuthGate";
+import SessionControls from "@/components/SessionControls";
 
 export const metadata: Metadata = {
   title: "老人购物｜简单买，放心收",
@@ -19,10 +21,11 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                 <Link className="focus-ring rounded-md px-3 py-3 text-center text-ink hover:bg-linen" href="/orders">我的订单</Link>
                 <Link className="focus-ring rounded-md px-3 py-3 text-center text-ink hover:bg-linen" href="/family">家人协助</Link>
                 <Link className="focus-ring rounded-md px-3 py-3 text-center text-forest hover:bg-linen" href="/support">联系客服</Link>
+                <SessionControls />
               </nav>
             </div>
           </header>
-          <main className="mx-auto max-w-6xl px-5 pb-16 pt-8">{children}</main>
+          <main className="mx-auto max-w-6xl px-5 pb-16 pt-8"><AuthGate>{children}</AuthGate></main>
         </div>
       </body>
     </html>

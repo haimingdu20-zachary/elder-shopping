@@ -1,3 +1,5 @@
+import { getSession, type UserSession } from "@/lib/auth";
+
 const configuredApiBase = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "");
 export const API_BASE = configuredApiBase || (process.env.NODE_ENV === "production" ? "/api/v1" : "http://127.0.0.1:8001/api/v1");
 
@@ -20,13 +22,16 @@ export type AssistantResult = { intent: string; reply: string; action: { type: s
 export type AssistantHistoryMessage = { role: "user" | "assistant"; content: string };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const result = await fetch(`${API_BASE}${path}`, { ...init, headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) }, cache: "no-store" });
+  const token = getSession()?.access_token;
+  const result = await fetch(`${API_BASE}${path}`, { ...init, headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(init?.headers ?? {}) }, cache: "no-store" });
   const payload = await result.json();
   if (!result.ok) throw new Error(payload?.error?.message ?? "服务暂时遇到问题，请稍后再试。");
   return payload.data as T;
 }
 
 export const api = {
+  login: (invite_code: string) => request<UserSession>("/auth/login", { method: "POST", body: JSON.stringify({ invite_code }) }),
+  me: () => request<UserSession["user"]>("/auth/me"),
   categories: () => request<{ id: string; name: string }[]>("/categories"),
   products: (params = "") => request<Product[]>(`/products${params ? `?${params}` : ""}`),
   product: (id: string) => request<Product>(`/products/${id}`),
