@@ -29,7 +29,9 @@ def response(data: object, request_id: str | None = None) -> dict[str, object]:
 
 
 def create_app(data_dir: str | Path | None = None) -> FastAPI:
-    resolved_data_dir = Path(data_dir or os.getenv("DATA_DIR", Path(__file__).resolve().parents[2] / "data"))
+    environment = os.getenv("ENV", os.getenv("APP_ENV", "development")).lower()
+    default_data_dir = Path("/tmp/data") if environment in {"prod", "production"} else Path(__file__).resolve().parents[2] / "data"
+    resolved_data_dir = Path(data_dir or os.getenv("DATA_DIR", default_data_dir))
     if not resolved_data_dir.is_absolute():
         resolved_data_dir = (Path(__file__).resolve().parents[2] / resolved_data_dir).resolve()
     service = CommerceService(JsonStore(resolved_data_dir), os.getenv("DEMO_USER_ID", "demo-elder"))
@@ -49,23 +51,35 @@ def create_app(data_dir: str | Path | None = None) -> FastAPI:
     cors_origins = [origin.strip() for origin in configured_origins.split(",") if origin.strip()]
     app.add_middleware(CORSMiddleware, allow_origins=cors_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
+    @app.middleware("http")
+    async def request_trace_middleware(request: Request, call_next):
+        trace_id = request.headers.get("x-request-id") or f"trace_{uuid4().hex[:12]}"
+        request.state.trace_id = trace_id
+        response = await call_next(request)
+        response.headers["x-request-id"] = trace_id
+        return response
+
     @app.exception_handler(AppError)
     async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
-        return JSONResponse(status_code=exc.status_code, content={"error": {"code": exc.code, "message": exc.message}, "request_id": f"req_{uuid4().hex[:12]}"})
+        trace_id = getattr(request.state, "trace_id", f"trace_{uuid4().hex[:12]}")
+        return JSONResponse(status_code=exc.status_code, content={"error": {"code": exc.code, "message": exc.message}, "request_id": trace_id})
 
     @app.exception_handler(RequestValidationError)
     async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
-        return JSONResponse(status_code=422, content={"error": {"code": "VALIDATION_ERROR", "message": "请检查输入内容后再试。"}, "request_id": f"req_{uuid4().hex[:12]}"})
+        trace_id = getattr(request.state, "trace_id", f"trace_{uuid4().hex[:12]}")
+        return JSONResponse(status_code=422, content={"error": {"code": "VALIDATION_ERROR", "message": "请检查输入内容后再试。"}, "request_id": trace_id})
 
     @app.exception_handler(StorageError)
     async def storage_error_handler(request: Request, exc: StorageError) -> JSONResponse:
-        logger.error("storage_error path=%s", request.url.path)
-        return JSONResponse(status_code=500, content={"error": {"code": "STORAGE_ERROR", "message": "演示数据暂时无法读取，请稍后再试。"}, "request_id": f"req_{uuid4().hex[:12]}"})
+        trace_id = getattr(request.state, "trace_id", f"trace_{uuid4().hex[:12]}")
+        logger.error("storage_error trace_id=%s path=%s", trace_id, request.url.path)
+        return JSONResponse(status_code=500, content={"error": {"code": "STORAGE_ERROR", "message": "演示数据暂时无法读取，请稍后再试。"}, "request_id": trace_id})
 
     @app.exception_handler(Exception)
     async def unexpected_error_handler(request: Request, exc: Exception) -> JSONResponse:
-        logger.exception("unexpected_error path=%s", request.url.path)
-        return JSONResponse(status_code=500, content={"error": {"code": "INTERNAL_ERROR", "message": "服务暂时遇到问题，请稍后再试。"}, "request_id": f"req_{uuid4().hex[:12]}"})
+        trace_id = getattr(request.state, "trace_id", f"trace_{uuid4().hex[:12]}")
+        logger.exception("unexpected_error trace_id=%s path=%s", trace_id, request.url.path)
+        return JSONResponse(status_code=500, content={"error": {"code": "INTERNAL_ERROR", "message": "服务暂时遇到问题，请稍后再试。"}, "request_id": trace_id})
 
     @app.get("/api/v1/health")
     async def health() -> dict[str, object]:

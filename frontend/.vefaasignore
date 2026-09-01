@@ -1,0 +1,7 @@
+.env
+.env.*
+node_modules/
+.next/cache/
+.git/
+.vefaas/
+*.log
